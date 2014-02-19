@@ -2,7 +2,9 @@ pbdoctorb
 ---------
 
 
-!["The 'B' is for 'bargain'!"](doctorb.jpg)
+![Dr. Nick](doctorb.jpg)
+
+*"The 'B' is for 'bargain'!"*
 
 Scripts for investigating/fixing issues with PacBio data or files.
 
