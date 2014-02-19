@@ -24,8 +24,10 @@ def setChem(chem, fname):
         except:
             print fname, "could not set chem!"
     else:
-        f = h5py.File(fname)
         assert fname.endswith(".cmp.h5")
+        f = h5py.File(fname)
+        if f.get("MovieInfo/SequencingChemistry") is not None:
+            del f["MovieInfo/SequencingChemistry"]
         f["/MovieInfo/SequencingChemistry"] = [chem]*len(f["/MovieInfo/Name"])
 
 def showChem(fname):
