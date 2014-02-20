@@ -5,7 +5,7 @@ setup(
     author='Pacific Biosciences',
     author_email='devnet@pacificbiosciences.com',
     license=open("LICENSES.txt").read(),
-    scripts = ["bin/chem"],
+    scripts = ["bin/chem", "bin/baxSlimmer"],
     zip_safe = False,
     install_requires=["pbcore >= 0.8.0"]
 )
