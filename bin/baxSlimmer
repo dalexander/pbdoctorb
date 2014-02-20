@@ -1,0 +1,78 @@
+#!/usr/bin/env python
+
+"""
+  baxSlimmer v0.1.0
+
+  Removes inessential stuff from PacBio bax files, and repacks better,
+  resulting in a savings space of ~ 44% at present.
+
+  The kinetics downsampling has not yet been tested to make sure it
+  doesn't break basemod detection.
+
+  Author: David Alexander
+"""
+
+import argparse, h5py, sys, shutil, numpy as np, tempfile
+from pbcore.util.Process import backticks
+
+DATASETS_TO_REMOVE = [ "/PulseData/BaseCalls/PulseIndex",
+                       "/PulseData/BaseCalls/SubstitutionTag",
+                       "/PulseData/BaseCalls/WidthInFrames" ]
+
+KINETICS_DATASETS  = [ "/PulseData/BaseCalls/PreBaseFrames" ]
+
+
+REPACK_CMD = "h5repack -f SHUF -f GZIP=4 -i {inFname} -o {packedFname}"
+
+class BaxSlimmingException(Exception): pass
+
+def removeDatasets(f, dsNames):
+    for dsName in dsNames:
+        if f.get(dsName) is not None:
+            print "Removing:", dsName
+            del f[dsName]
+
+def downsample(a, factor=4):
+    return (a//factor)*factor+(factor/2)
+
+def slimKineticsInPlace(f, options):
+    for dsName in KINETICS_DATASETS:
+        if f.get(dsName) is not None:
+            print "Downsampling:", dsName
+            ds = f[dsName]
+            # This uses too much memory, consider devectorizing
+            ds[:] = downsample(ds[:])
+
+def repack(fname, options):
+    print "Repacking"
+    with tempfile.NamedTemporaryFile(suffix=".bax.h5") as packFile:
+        packFname = packFile.name
+        cmd = REPACK_CMD.format(inFname=fname,
+                                packedFname=packFname)
+        _, error, _ = backticks(cmd)
+        shutil.copy(packFname, fname)
+
+def slimBaxInPlace(fname, options):
+    with h5py.File(fname) as f:
+        removeDatasets(f, DATASETS_TO_REMOVE)
+        slimKineticsInPlace(f, options)
+    repack(fname, options)
+
+def slimBax(inputFname, outputFname, options):
+    if inputFname != outputFname:
+        shutil.copy(inputFname, outputFname)
+    slimBaxInPlace(outputFname, options)
+
+def main():
+    parser = argparse.ArgumentParser()
+    outputGroup = parser.add_mutually_exclusive_group()
+    outputGroup.add_argument("--inPlace", action="store_true")
+    outputGroup.add_argument("-o", "--outputFile", default="out.bax.h5")
+    parser.add_argument("inputFile")
+    options = parser.parse_args()
+    if options.inPlace:
+        options.outputFile = options.inputFile
+    slimBax(options.inputFile, options.outputFile, options)
+
+if __name__ == '__main__':
+    sys.exit(main())
