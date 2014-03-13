@@ -1,0 +1,98 @@
+#!/usr/bin/env python
+
+import sys, numpy as np, re, os.path
+from glob import glob
+from xml.etree import ElementTree as ET
+from pbcore.io import readFofn
+
+def stsHeader():
+    return ["NumReads", "ReadLength", "ReadQuality",
+            "LocalBaseRate",
+            "P0", "P1", "P2",
+            "SNR_A", "SNR_C", "SNR_G", "SNR_T",]
+
+def stsLine(stsXml):
+    NS = "http://pacificbiosciences.com/PipelineStats/PipeStats.xsd"
+
+    def _(*tags):
+        dirs = [ str(ET.QName(NS, tag)) for tag in tags ]
+        return "./" + "/".join(dirs)
+
+    tree = ET.parse(stsXml).getroot()
+
+    stats = []
+    #stats.append(stsXml)
+
+    numReads = int(tree.find(_("ReadLenDist", "SampleSize")).text)
+    readLength = int(round(float(tree.find(_("ReadLenDist", "SampleMean")).text)))
+    readQuality = float(tree.find(_("MovieReadQualDist", "SampleMean")).text)
+    localBaseRate = float(tree.find(_("LocalBaseRateDist", "SampleMean")).text)
+    stats += [numReads, readLength, readQuality, localBaseRate]
+
+    binCounts_ = tree.findall(_("ProdDist", "BinCount"))[:3]
+    binCounts = [float(bc.text) for bc in binCounts_]
+    productivities = list(np.array(binCounts)/sum(binCounts))
+    stats += productivities
+
+    hqRegionSnrs_ = tree.findall(_("HqRegionSnrDist"))
+    meanSnrs = { snrs_.attrib["Channel"] : float(snrs_.find(_("SampleMean")).text)
+                 for snrs_ in hqRegionSnrs_ }
+    stats += [meanSnrs[base] for base in "ACGT"]
+    return stats
+
+def metadataHeader():
+    return ["RunName", "SampleName"]
+
+def metadataLine(stsXml):
+    NS = "http://pacificbiosciences.com/PAP/Metadata.xsd"
+
+    def _(*tags):
+        dirs = [ str(ET.QName(NS, tag)) for tag in tags ]
+        return "./" + "/".join(dirs)
+
+    up = os.path.dirname
+    metadataFile = glob(up(up(stsXml)) + "/*.metadata.xml")[0]
+
+    tree = ET.parse(metadataFile).getroot()
+    stats = []
+    stats.append(tree.find(_("Run", "Name")).text)
+    stats.append(tree.find(_("Sample", "Name")).text)
+    return stats
+
+def formatFloat(v):
+    return "%.3f" % v
+
+def format(v):
+    if isinstance(v, float): return formatFloat(v)
+    else:                    return str(v)
+
+def join(lst):
+    return ",".join(map(format, lst))
+
+def movieRoot(filename):
+    # Path looks like ....[.partNumber].[bas|bax].h5
+    return filename.split(".")[0]
+
+def main(inputFiles):
+    inputMovieRoots = set()
+    for fn in inputFiles:
+        if fn.endswith(".fofn"):
+            for fn_ in readFofn(fn):
+                inputMovieRoots.add(movieRoot(fn_))
+        else:
+            inputMovieRoots.add(movieRoot(fn))
+    print join(metadataHeader() + stsHeader())
+    for root in inputMovieRoots:
+        stsXml = root + ".sts.xml"
+        if not os.path.exists(stsXml):
+            print >>sys.stderr, "sts.xml not found for " + root
+        else:
+            metaStats = metadataLine(stsXml)
+            stsStats = stsLine(stsXml)
+            print join(metaStats + stsStats)
+
+# Argument: list of sts.xml files
+# Example command:
+# $ runStats.py /mnt/data3/vol59/{2890004,2890005}/*/Retrained_2-1-0_P5C3_final/*.sts.xml
+if __name__ == '__main__':
+    main(sys.argv[1:])
