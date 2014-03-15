@@ -6,6 +6,7 @@ setup(
     author_email='devnet@pacificbiosciences.com',
     license=open("LICENSES.txt").read(),
     scripts = ["bin/chem",
+               "bin/baxSieve",
                "bin/baxSlimmer",
                "bin/runStats"],
     zip_safe = False,

@@ -1,0 +1,332 @@
+#!/usr/bin/env python
+# Author: Marcus Kinsella
+
+import argparse
+import collections
+import h5py
+import numpy
+import os
+import warnings
+
+BASECALL_DATASETS = [
+    'PulseData/BaseCalls/Basecall',
+    'PulseData/BaseCalls/DeletionQV',
+    'PulseData/BaseCalls/DeletionTag',
+    'PulseData/BaseCalls/InsertionQV',
+    'PulseData/BaseCalls/MergeQV',
+    'PulseData/BaseCalls/QualityValue',
+    'PulseData/BaseCalls/SubstitutionQV',
+    'PulseData/BaseCalls/SubstitutionTag',
+    'PulseData/BaseCalls/PulseIndex',
+    'PulseData/BaseCalls/PreBaseFrames',
+    'PulseData/BaseCalls/WidthInFrames']
+
+CONSENSUS_BASECALL_DATASETS = [
+    'PulseData/ConsensusBaseCalls/Basecall',
+    'PulseData/ConsensusBaseCalls/DeletionQV',
+    'PulseData/ConsensusBaseCalls/DeletionTag',
+    'PulseData/ConsensusBaseCalls/InsertionQV',
+    'PulseData/ConsensusBaseCalls/QualityValue',
+    'PulseData/ConsensusBaseCalls/SubstitutionQV',
+    'PulseData/ConsensusBaseCalls/SubstitutionTag']
+
+ZMW_DATASETS = [
+    '/PulseData/BaseCalls/ZMW/HoleChipLook',
+    '/PulseData/BaseCalls/ZMW/HoleNumber',
+    '/PulseData/BaseCalls/ZMW/HoleStatus',
+    '/PulseData/BaseCalls/ZMW/HoleXY',
+    '/PulseData/BaseCalls/ZMW/NumEvent',
+    '/PulseData/BaseCalls/ZMWMetrics/BaseFraction',
+    '/PulseData/BaseCalls/ZMWMetrics/BaseIpd',
+    '/PulseData/BaseCalls/ZMWMetrics/BaseRate',
+    '/PulseData/BaseCalls/ZMWMetrics/BaseRateVsT',
+    '/PulseData/BaseCalls/ZMWMetrics/BaseWidth',
+    '/PulseData/BaseCalls/ZMWMetrics/CmBasQv',
+    '/PulseData/BaseCalls/ZMWMetrics/CmDelQv',
+    '/PulseData/BaseCalls/ZMWMetrics/CmInsQv',
+    '/PulseData/BaseCalls/ZMWMetrics/CmSubQv',
+    '/PulseData/BaseCalls/ZMWMetrics/DarkBaseRate',
+    '/PulseData/BaseCalls/ZMWMetrics/HQRegionDyeSpectra',
+    '/PulseData/BaseCalls/ZMWMetrics/HQRegionEndTime',
+    '/PulseData/BaseCalls/ZMWMetrics/HQRegionEstPkmid',
+    '/PulseData/BaseCalls/ZMWMetrics/HQRegionEstPkstd',
+    '/PulseData/BaseCalls/ZMWMetrics/HQRegionIntraPulseStd',
+    '/PulseData/BaseCalls/ZMWMetrics/HQRegionPkzvar',
+    '/PulseData/BaseCalls/ZMWMetrics/HQRegionSNR',
+    '/PulseData/BaseCalls/ZMWMetrics/HQRegionStartTime',
+    '/PulseData/BaseCalls/ZMWMetrics/LocalBaseRate',
+    '/PulseData/BaseCalls/ZMWMetrics/NumBaseVsT',
+    '/PulseData/BaseCalls/ZMWMetrics/NumPauseVsT',
+    '/PulseData/BaseCalls/ZMWMetrics/Pausiness',
+    '/PulseData/BaseCalls/ZMWMetrics/Productivity',
+    '/PulseData/BaseCalls/ZMWMetrics/ReadScore',
+    '/PulseData/BaseCalls/ZMWMetrics/ReadType',
+    '/PulseData/BaseCalls/ZMWMetrics/RmBasQv',
+    '/PulseData/BaseCalls/ZMWMetrics/RmDelQv',
+    '/PulseData/BaseCalls/ZMWMetrics/RmInsQv',
+    '/PulseData/BaseCalls/ZMWMetrics/RmSubQv',
+    '/PulseData/BaseCalls/ZMWMetrics/SpectralDiagRR',
+    '/PulseData/ConsensusBaseCalls/Passes/NumPasses',
+    '/PulseData/ConsensusBaseCalls/ZMW/HoleChipLook',
+    '/PulseData/ConsensusBaseCalls/ZMW/HoleNumber',
+    '/PulseData/ConsensusBaseCalls/ZMW/HoleStatus',
+    '/PulseData/ConsensusBaseCalls/ZMW/HoleXY',
+    '/PulseData/ConsensusBaseCalls/ZMW/NumEvent',
+    '/PulseData/ConsensusBaseCalls/ZMWMetrics/InsertReadLength',
+    '/PulseData/ConsensusBaseCalls/ZMWMetrics/PredictedAccuracy']
+
+PASS_DATASETS = [
+    '/PulseData/ConsensusBaseCalls/Passes/AdapterHitAfter',
+    '/PulseData/ConsensusBaseCalls/Passes/AdapterHitBefore',
+    '/PulseData/ConsensusBaseCalls/Passes/PassDirection',
+    '/PulseData/ConsensusBaseCalls/Passes/PassNumBases',
+    '/PulseData/ConsensusBaseCalls/Passes/PassStartBase']
+
+# The number of elements in a array to keep in memory before flushing to disk.
+BUFFER_SIZE = 2000000
+
+
+def copyAttributes(inDs, outDs):
+    for k in inDs.attrs.keys():
+        outDs.attrs[k] = inDs.attrs[k]
+
+def _makeOffsetsDataStructure(h5Group):
+    numEvent   = h5Group["ZMW/NumEvent"].value
+    holeNumber = h5Group["ZMW/HoleNumber"].value
+    endOffset = numpy.cumsum(numEvent)
+    beginOffset = numpy.hstack(([0], endOffset[0:-1]))
+    offsets = zip(beginOffset, endOffset)
+    return dict(zip(holeNumber, offsets))
+
+def mark_version_as_modified(version_string):
+    """Replace the changelist part of the version string so that it's clear
+    that this file has been modified since primary.
+    """
+    return '.'.join(version_string.split('.')[:-1]) + '.999999'
+
+class BasH5Writer(object):
+
+    """A class for creating a bas.h5 file. Appending data to a dataset takes,
+    essentially, forever. So, we'll try to do that less often by buffering the
+    datasets in memory and writing just a few times.
+
+    Also, there are a lot of attrs, etc that are required but not substantively
+    used by different smrtanalysis components, so we try to add as many as we \
+    can even if they just contain dummy values.
+    """
+
+    def __init__(self, filename, input_bash5):
+        """Open the h5 file for writing and set up the groups. The dataset
+        creation is deferred until we actually get some data.
+        """
+
+        self._input_bash5 = h5py.File(input_bash5, 'r')
+        self._input_region_table = self._input_bash5['PulseData/Regions'].value
+
+        self._special_dtype = h5py.special_dtype(vlen=str)
+
+        self._f = h5py.File(filename, 'w')
+        self._f.copy(self._input_bash5['ScanData'], 'ScanData')
+
+        self._f.create_group("PulseData")
+        self._f.create_group("PulseData/BaseCalls")
+        self._f.create_group("PulseData/BaseCalls/ZMW")
+        self._f.create_group("PulseData/BaseCalls/ZMWMetrics")
+        copyAttributes(self._input_bash5['PulseData/BaseCalls'],
+                       self._f['PulseData/BaseCalls'])
+        self._offsets = _makeOffsetsDataStructure(
+                                       self._input_bash5['PulseData/BaseCalls'])
+
+        # If the input file has a ConsensusBaseCalls group, then create the
+        # appropriate groups in the output file
+        if self._input_bash5.get("PulseData/ConsensusBaseCalls"):
+            self.has_ccs = True
+            self._f.create_group("PulseData/ConsensusBaseCalls")
+            self._f.create_group("PulseData/ConsensusBaseCalls/Passes")
+            self._f.create_group("PulseData/ConsensusBaseCalls/ZMW")
+            self._f.create_group("PulseData/ConsensusBaseCalls/ZMWMetrics")
+            copyAttributes(self._input_bash5['PulseData/ConsensusBaseCalls'],
+                           self._f['PulseData/ConsensusBaseCalls'])
+            self._ccs_offsets = _makeOffsetsDataStructure(
+                              self._input_bash5['PulseData/ConsensusBaseCalls'])
+        else:
+            self.has_ccs = False
+
+        self._buffers = {}
+        self._buffer_bounds = collections.defaultdict(int)
+
+        hole_numbers = self._input_bash5["PulseData/BaseCalls/ZMW/HoleNumber"].value
+        self._hole_number_to_index = {k:v for v,k in enumerate(hole_numbers)}
+
+    def write_zmw(self, hole_number):
+        hole_index = self._hole_number_to_index[hole_number]
+        print "Writing ZMW", hole_number, "index", hole_index
+        offsets = self._offsets[hole_number]
+        if self.has_ccs:
+            ccs_offsets = self._ccs_offsets[hole_number]
+
+        if offsets[1] - offsets[0] != 0:
+            for ds in BASECALL_DATASETS:
+                try:
+                    self._add_to_buffer(ds, self._input_bash5[ds][offsets[0]:offsets[1]])
+                except KeyError:
+                    pass
+
+        if self.has_ccs:
+            if ccs_offsets[1] - ccs_offsets[0] > 0:
+                for ds in CONSENSUS_BASECALL_DATASETS:
+                    self._add_to_buffer(ds,
+                           self._input_bash5[ds][ccs_offsets[0]:ccs_offsets[1]])
+
+        for ds in ZMW_DATASETS:
+            if not self.has_ccs and "ConsensusBaseCalls" in ds:
+                continue
+            try:
+                self._add_to_buffer(ds, self._input_bash5[ds][hole_index:hole_index+1])
+            except KeyError:
+                pass
+
+        region_indices = numpy.where(self._input_region_table[:,0] == hole_number)[0]
+        regions = self._input_region_table[region_indices]
+
+        self._add_to_buffer('PulseData/Regions', regions)
+
+
+    def _write_attrs(self):
+        """Write some attributes to the Regions and ZMW datasets so that the
+        bas.h5 file will work the older BasH5IO tools and blasr.
+        """
+
+        region_dset_name = '/PulseData/Regions'
+        region_dset = self._f.get(region_dset_name)
+        if not region_dset:
+            warnings.warn("Bas.h5 file appears to be empty.")
+            return
+
+        region_dset.attrs["RegionTypes"] = numpy.array(['Adapter', 'Insert',
+                                         'HQRegion'], dtype=self._special_dtype)
+        region_dset.attrs["RegionSources"] = numpy.array(["AdapterFinding",
+            "AdapterFinding", "PulseToBase Region classifer"],
+            dtype=self._special_dtype)
+
+        region_dset.attrs["ColumnNames"] = numpy.array(["HoleNumber",
+               "Region type index", "Region start in bases",
+               "Region end in bases", "Region score"], dtype=self._special_dtype)
+
+        region_dset.attrs["RegionDescriptions"] = numpy.array(["Adapter Hit",
+                "Insert Region",
+                "High Quality bases region. Score is 1000 * predicted accuracy, where predicted accuary is 0 to 1.0"],
+                dtype=self._special_dtype)
+
+        zmw_dset_name = "PulseData/BaseCalls/ZMW/HoleStatus"
+        zmw_dset = self._f.get(zmw_dset_name)
+        lookup_table = numpy.array(['SEQUENCING', 'ANTIHOLE', 'FIDUCIAL',
+                                     'SUSPECT', 'ANTIMIRROR', 'FDZMW', 'FBZMW',
+                                     'ANTIBEAMLET', 'OUTSIDEFOV'], dtype='|S12')
+        zmw_dset.attrs["LookupTable"] = lookup_table
+
+    def flush(self):
+        """Empty all of the buffers, writing them to disk."""
+        for buffer_name in self._buffers:
+            self._flush_to_dataset(buffer_name)
+
+    def close(self):
+        """Flush buffers and close the h5 file."""
+        self.flush()
+        self._write_attrs()
+        self._f.close()
+        self._input_bash5.close()
+
+    def _flush_to_dataset(self, buffer_name):
+        """Write the contests of the buffer names buffer_name to disk and set
+        the buffer to None.
+        """
+        # If the buffer is empty don't do anything
+        if self._buffers[buffer_name] is None or not self._buffers[buffer_name].size:
+            return
+
+        buffer_shape = self._buffers[buffer_name].shape
+        self._buffers[buffer_name] = numpy.resize(self._buffers[buffer_name], (self._buffer_bounds[buffer_name],) + buffer_shape[1:])
+
+        # See if the dataset exists. If not, we'll create it rather than
+        # resize it
+        if not self._f.get(buffer_name):
+            self._f.create_dataset(buffer_name, data=self._buffers[buffer_name],
+                                   maxshape=(None,)*len(buffer_shape), chunks=True)
+        else:
+            dset = self._f.get(buffer_name)
+            current_shape = dset.shape
+            buffer_shape = self._buffers[buffer_name].shape
+
+            # We'll assume that everything should be extended along the 0th
+            # axis
+            new_shape = (current_shape[0] + buffer_shape[0],) + current_shape[1:]
+            dset.resize(new_shape)
+            dset[current_shape[0]:current_shape[0] + buffer_shape[0]] = \
+                                                      self._buffers[buffer_name]
+
+        self._buffers[buffer_name] = None
+        self._buffer_bounds[buffer_name] = 0
+
+    def _add_to_buffer(self, buffer_name, array):
+        """Add the array to the buffer buffer_name. If the buffer gets too big,
+        _add_to_buffer will handle writing it to disk.
+        """
+        if self._buffer_bounds[buffer_name] + array.shape[0] >= BUFFER_SIZE:
+            self._flush_to_dataset(buffer_name)
+
+        #If the buffer is empty or non-existant, initialize it as zeros because
+        #it's expensive to append to numpy arrays.
+        if buffer_name not in self._buffers or self._buffers[buffer_name] is None:
+            self._buffers[buffer_name] = numpy.zeros(
+                    (BUFFER_SIZE,) + array.shape[1:], dtype=array.dtype)
+
+            self._buffer_bounds[buffer_name] = 0
+
+        #"Append" to the array by slicing
+        insert_start = self._buffer_bounds[buffer_name]
+        insert_end = insert_start + array.shape[0]
+        self._buffers[buffer_name][insert_start:insert_end,...] = array
+        self._buffer_bounds[buffer_name] += array.shape[0]
+
+def _parser():
+    """Return an instance of ArgumentParser"""
+    desc = "Tool creating a bas.h5 file containing only reads from a whitelist."
+    p = argparse.ArgumentParser(description=desc)
+
+    p.add_argument("input_bash5",
+                    help="Input bas.h5 file from which reads will be read.")
+
+    p.add_argument("output_bash5",
+                    help="Output bas.h5 to which filtered reads will be written.")
+
+    p.add_argument('whitelist',
+                    help="File containing whitelist of one hole number per line")
+    return p
+
+def main():
+    """Main point of entry"""
+
+    p = _parser()
+
+    args = p.parse_args()
+
+    input_bash5 = args.input_bash5
+    output_bash5 = args.output_bash5
+    whitelist = args.whitelist
+
+    white_set = set(int(k.strip()) for k in open(whitelist))
+
+    if not os.path.exists(input_bash5):
+        raise IOError("Unable to find input bas.h5 file {b}.".format(b=input_bash5))
+
+    bash5_writer = BasH5Writer(output_bash5, input_bash5)
+
+    for zmw_number in sorted(white_set):
+        bash5_writer.write_zmw(zmw_number)
+
+    bash5_writer.close()
+
+
+if __name__ == '__main__':
+    main()
