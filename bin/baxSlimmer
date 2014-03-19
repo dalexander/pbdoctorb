@@ -55,7 +55,7 @@ def repack(fname, options):
 def slimBaxInPlace(fname, options):
     with h5py.File(fname) as f:
         removeDatasets(f, DATASETS_TO_REMOVE)
-        slimKineticsInPlace(f, options)
+        #slimKineticsInPlace(f, options)
     repack(fname, options)
 
 def slimBax(inputFname, outputFname, options):
