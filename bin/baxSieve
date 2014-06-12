@@ -6,7 +6,10 @@ import collections
 import h5py
 import numpy
 import os
+import sys
 import warnings
+
+from pbcore.io import BaxH5Reader
 
 BASECALL_DATASETS = [
     'PulseData/BaseCalls/Basecall',
@@ -300,9 +303,50 @@ def _parser():
     p.add_argument("output_bash5",
                     help="Output bas.h5 to which filtered reads will be written.")
 
-    p.add_argument('whitelist',
-                    help="File containing whitelist of one hole number per line")
+    p.add_argument('--whitelist',
+                   help="File containing whitelist of one hole number per line",
+                   default=None)
+
+
+    class Range(object):
+        def __init__(self, begin, end):
+            self.begin = begin
+            self.end = end
+
+        @staticmethod
+        def fromString(r):
+            x, y = map(int, r.split("-"))
+            return Range(x, y)
+
+        @staticmethod
+        def entire():
+            return Range(-sys.maxint-1, sys.maxint)
+
+        def __contains__(self, x):
+            return self.begin <= x < self.end
+
+    p.add_argument('--snrRangeA',
+                   help="Range 'x-y' for SNR_A values to select",
+                   type=Range.fromString,
+                   default=Range.entire())
+
+    p.add_argument('--snrRangeT',
+                   help="Range 'x-y' for SNR_A values to select",
+                   type=Range.fromString,
+                   default=Range.entire())
+
     return p
+
+
+def computeWhitelist(inBaxFname, snrRangeA, snrRangeT):
+    whitelist = []
+    with BaxH5Reader(inBaxFname) as B:
+        for hn in B.allSequencingZmws:
+            zmw = B[hn]
+            snrT, snrG, snrA, snrC = zmw.zmwMetric("HQRegionSNR")
+            if (snrT in snrRangeT) and (snrA in snrRangeA):
+                whitelist.append(zmw.holeNumber)
+    return whitelist
 
 def main():
     """Main point of entry"""
@@ -313,12 +357,17 @@ def main():
 
     input_bash5 = args.input_bash5
     output_bash5 = args.output_bash5
-    whitelist = args.whitelist
-
-    white_set = set(int(k.strip()) for k in open(whitelist))
 
     if not os.path.exists(input_bash5):
         raise IOError("Unable to find input bas.h5 file {b}.".format(b=input_bash5))
+
+    if args.whitelist:
+        whitelist = [int(k.strip()) for k in open(args.whitelist)]
+    else:
+        whitelist = computeWhitelist(input_bash5, args.snrRangeA, args.snrRangeT)
+
+    white_set = set(whitelist)
+
 
     bash5_writer = BasH5Writer(output_bash5, input_bash5)
 
