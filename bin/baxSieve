@@ -7,6 +7,7 @@ import h5py
 import numpy
 import os
 import warnings
+import random
 
 BASECALL_DATASETS = [
     'PulseData/BaseCalls/Basecall',
@@ -289,9 +290,14 @@ class BasH5Writer(object):
         self._buffers[buffer_name][insert_start:insert_end,...] = array
         self._buffer_bounds[buffer_name] += array.shape[0]
 
+def get_hole_numbers(input_bash5):
+    input_bash5 = h5py.File(input_bash5, 'r')
+    return input_bash5["PulseData/BaseCalls/ZMW/HoleNumber"].value
+
 def _parser():
     """Return an instance of ArgumentParser"""
-    desc = "Tool creating a bas.h5 file containing only reads from a whitelist."
+    desc = "Tool for subsetting a bas.h5 file based on either a whitelist of hole numbers\
+            or a percentage of reads to be randomly selected."
     p = argparse.ArgumentParser(description=desc)
 
     p.add_argument("input_bash5",
@@ -300,8 +306,13 @@ def _parser():
     p.add_argument("output_bash5",
                     help="Output bas.h5 to which filtered reads will be written.")
 
-    p.add_argument('whitelist',
+    p.add_argument('--whitelist', dest='whitelist', type=str,
                     help="File containing whitelist of one hole number per line")
+
+    p.add_argument('--percentage', dest='percentage', type=int,
+                   help="If you prefer to recover a percentage of a SMRTcell rather\
+			 than a specific list of reads specify that percentage (as an integer) here")
+
     return p
 
 def main():
@@ -314,16 +325,26 @@ def main():
     input_bash5 = args.input_bash5
     output_bash5 = args.output_bash5
     whitelist = args.whitelist
-
-    white_set = set(int(k.strip()) for k in open(whitelist))
+    percent = args.percentage
 
     if not os.path.exists(input_bash5):
         raise IOError("Unable to find input bas.h5 file {b}.".format(b=input_bash5))
 
     bash5_writer = BasH5Writer(output_bash5, input_bash5)
 
-    for zmw_number in sorted(white_set):
-        bash5_writer.write_zmw(zmw_number)
+    
+    if not percent:
+        white_set = set(int(k.strip()) for k in open(whitelist))
+        for zmw_number in sorted(white_set):
+            bash5_writer.write_zmw(zmw_number)
+    elif percent:
+        hole_numbers = get_hole_numbers(input_bash5)
+        num_records = len(hole_numbers) * percent / 100
+        print "Randomly choosing {n} reads".format(n=num_records)
+        random_list = random.sample(hole_numbers, num_records)
+        for zmw_number in sorted(random_list):
+            bash5_writer.write_zmw(zmw_number)
+    
 
     bash5_writer.close()
 
