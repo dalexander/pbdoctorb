@@ -3,12 +3,13 @@ import sys, h5py, argparse, os.path as osp
 from pbcore.io import *
 from pbcore.chemistry import ChemistryLookupError
 
-VALID_CHEMISTRIES = [ "C2", "P4-C2", "P5-C3", "unknown" ]
+VALID_CHEMISTRIES = [ "C2", "P4-C2", "P5-C3", "P6-C4", "unknown" ]
 
 CHEMISTRY_OVERRIDE_TRIPLES = \
  { "C2"      : ("001672551", "001558034", "2.1"),
    "P4-C2"   : ("100236500", "001558034", "2.1"),
    "P5-C3"   : ("100256000", "100254800", "2.1"),
+   "P6-C4"   : ("100356300", "100356200", "2.1"),
    "unknown" : ("","","") }
 
 def movieName(fname):
