@@ -1,6 +1,7 @@
 #!/usr/bin/env python2.7
 import sys, h5py, argparse, os.path as osp
-from pbcore.io import readFofn
+from pbcore.io import *
+from pbcore.chemistry import ChemistryLookupError
 
 VALID_CHEMISTRIES = [ "C2", "P4-C2", "P5-C3", "unknown" ]
 
@@ -16,7 +17,6 @@ def setChem(chem, fname):
             setChem(chem, fn)
 
     elif fname.endswith(".bax.h5") or fname.endswith(".bas.h5"):
-        print >> sys.stderr, "** Warning: bas/bax chemistry info not used until 2.2; consider updating metadata.xml instead **"
         f = h5py.File(fname)
         ri = f["/ScanData/RunInfo"]
         try:
@@ -35,24 +35,22 @@ def showChem(fname):
         for fn in readFofn(fname):
             showChem(fn)
     elif fname.endswith(".bax.h5") or fname.endswith(".bas.h5"):
-        f = h5py.File(fname, "r")
-        ri = f["/ScanData/RunInfo"]
+        b = BasH5Reader(fname)
         try:
-            chem = ri.attrs["SequencingChemistry"]
-            print movieName(fname), chem
-        except:
-            print movieName(fname), "absent"
+            chem = b.sequencingChemistry
+        except ChemistryLookupError:
+            chem = "absent"
+        print fname, chem
     else:
         assert fname.endswith(".cmp.h5")
-        f = h5py.File(fname, "r")
-        movieNames = f["/MovieInfo/Name"]
+        c = CmpH5Reader(fname)
+        names = c.movieInfoTable.Name
         try:
-            seqChems = f["/MovieInfo/SequencingChemistry"]
-            for (mn, chemistry) in zip(movieNames, seqChems):
-                print mn, chemistry
-        except:
-            for mn in movieNames:
-                print mn, "absent"
+            chems = c.sequencingChemistry
+        except ChemistryLookupError:
+            chems = ["absent"] * len(names)
+        for name, chem  in zip(names, chems):
+            print name, chem
 
 def setHandler(args):
     for fname in args.fnames:
