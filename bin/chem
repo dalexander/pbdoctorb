@@ -11,30 +11,52 @@ def movieName(fname):
     #m = re.match("(.*)\..\.bax\.h5", bn)
     return bn.split(".")[0]
 
+def safeDel(f, key):
+    if key in f:
+        del f[key]
+
 def setChem(chem, fname):
     if fname.endswith(".fofn"):
         for fn in readFofn(fname):
             setChem(chem, fn)
 
-    elif fname.endswith(".bax.h5") or fname.endswith(".bas.h5"):
+    elif (fname.endswith(".bax.h5") or
+          fname.endswith(".bas.h5") or
+          fname.endswith(".bas.h5")):
+
         f = h5py.File(fname)
-        ri = f["/ScanData/RunInfo"]
-        try:
-            ri.attrs["SequencingChemistry"] = chem
-        except:
-            print fname, "could not set chem!"
+
+        # Recurse if multipart
+        if "MultiPart" in f:
+            partNames = [ osp.join(osp.dirname(fname), p)
+                          for p in f["/MultiPart/Parts"] ]
+            for part in partNames:
+                setChem(chem, part)
+        else:
+            try:
+                safeDel(f["/ScanData/RunInfo"].attrs, "SequencingKit")
+                safeDel(f["/ScanData/RunInfo"].attrs, "BindingKit")
+                safeDel(f["/PulseData/BaseCalls"].attrs, "ChangeListID")
+                safeDel(f["/ScanData/RunInfo"].attrs, "SequencingChemistry")
+                f["/ScanData/RunInfo"].attrs["SequencingChemistry"] = chem
+            except:
+                print fname, "could not set chem!"
     else:
         assert fname.endswith(".cmp.h5")
         f = h5py.File(fname)
-        if f.get("MovieInfo/SequencingChemistry") is not None:
-            del f["MovieInfo/SequencingChemistry"]
+        safeDel(f["/MovieInfo"], "SequencingKit")
+        safeDel(f["/MovieInfo"], "BindingKit")
+        safeDel(f["/MovieInfo"], "SoftwareVersion")
+        safeDel(f["/MovieInfo"], "SequencingChemistry")
         f["/MovieInfo/SequencingChemistry"] = [chem]*len(f["/MovieInfo/Name"])
 
 def showChem(fname):
     if fname.endswith(".fofn"):
         for fn in readFofn(fname):
             showChem(fn)
-    elif fname.endswith(".bax.h5") or fname.endswith(".bas.h5"):
+    elif (fname.endswith(".bax.h5") or
+          fname.endswith(".bas.h5") or
+          fname.endswith(".ccs.h5")):
         b = BasH5Reader(fname)
         try:
             chem = b.sequencingChemistry
