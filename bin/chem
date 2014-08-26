@@ -71,8 +71,9 @@ def showChem(fname):
             chems = c.sequencingChemistry
         except ChemistryLookupError:
             chems = ["absent"] * len(names)
+        print fname
         for name, chem  in zip(names, chems):
-            print name, chem
+            print "    ", name, chem
 
 def setHandler(args):
     for fname in args.fnames:
