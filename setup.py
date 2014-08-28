@@ -2,6 +2,7 @@ from setuptools import setup
 
 setup(
     name = 'pbdoctorb',
+    version = "0.1.0",
     author='Pacific Biosciences',
     author_email='devnet@pacificbiosciences.com',
     license=open("LICENSES.txt").read(),

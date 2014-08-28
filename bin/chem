@@ -5,6 +5,11 @@ from pbcore.chemistry import ChemistryLookupError
 
 VALID_CHEMISTRIES = [ "C2", "P4-C2", "P5-C3", "unknown" ]
 
+CHEMISTRY_OVERRIDE_TRIPLES = \
+ { "C2"      : ("001672551", "001558034", "2.1"),
+   "P4-C2"   : ("100236500", "001558034", "2.1"),
+   "P5-C3"   : ("100256000", "100254800", "2.1"),
+   "unknown" : ("","","") }
 
 def movieName(fname):
     bn = osp.basename(fname)
@@ -16,6 +21,8 @@ def safeDel(f, key):
         del f[key]
 
 def setChem(chem, fname):
+    bk, sk, swVers = CHEMISTRY_OVERRIDE_TRIPLES[chem]
+
     if fname.endswith(".fofn"):
         for fn in readFofn(fname):
             setChem(chem, fn)
@@ -34,21 +41,22 @@ def setChem(chem, fname):
                 setChem(chem, part)
         else:
             try:
-                safeDel(f["/ScanData/RunInfo"].attrs, "SequencingKit")
-                safeDel(f["/ScanData/RunInfo"].attrs, "BindingKit")
-                safeDel(f["/PulseData/BaseCalls"].attrs, "ChangeListID")
-                safeDel(f["/ScanData/RunInfo"].attrs, "SequencingChemistry")
-                f["/ScanData/RunInfo"].attrs["SequencingChemistry"] = chem
+                f["/ScanData/RunInfo"].attrs["BindingKit"] = bk
+                f["/ScanData/RunInfo"].attrs["SequencingKit"] = sk
+                f["/PulseData/BaseCalls"].attrs["ChangeListID"] = swVers
             except:
                 print fname, "could not set chem!"
     else:
         assert fname.endswith(".cmp.h5")
         f = h5py.File(fname)
+        n = len(f["/MovieInfo/Name"])
         safeDel(f["/MovieInfo"], "SequencingKit")
         safeDel(f["/MovieInfo"], "BindingKit")
         safeDel(f["/MovieInfo"], "SoftwareVersion")
         safeDel(f["/MovieInfo"], "SequencingChemistry")
-        f["/MovieInfo/SequencingChemistry"] = [chem]*len(f["/MovieInfo/Name"])
+        f["/MovieInfo/BindingKit"] = [bk] * n
+        f["/MovieInfo/SequencingKit"] = [sk] * n
+        f["/MovieInfo/SoftwareVersion"] = [swVers] * n
 
 def showChem(fname):
     if fname.endswith(".fofn"):
@@ -64,6 +72,7 @@ def showChem(fname):
             chem = "absent"
         print fname, chem
     else:
+        print fname
         assert fname.endswith(".cmp.h5")
         c = CmpH5Reader(fname)
         names = c.movieInfoTable.Name
