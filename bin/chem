@@ -42,6 +42,7 @@ def setChem(chem, fname):
                 setChem(chem, part)
         else:
             try:
+                safeDel(f["/ScanData/RunInfo"].attrs, "SequencingChemistry")
                 f["/ScanData/RunInfo"].attrs["BindingKit"] = bk
                 f["/ScanData/RunInfo"].attrs["SequencingKit"] = sk
                 f["/PulseData/BaseCalls"].attrs["ChangeListID"] = swVers
