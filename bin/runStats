@@ -41,7 +41,7 @@ def stsLine(stsXml):
     return stats
 
 def metadataHeader():
-    return ["RunName", "SampleName"]
+    return ["Path", "RunName", "SampleName"]
 
 def metadataLine(stsXml):
     NS = "http://pacificbiosciences.com/PAP/Metadata.xsd"
@@ -51,10 +51,12 @@ def metadataLine(stsXml):
         return "./" + "/".join(dirs)
 
     up = os.path.dirname
-    metadataFile = glob(up(up(stsXml)) + "/*.metadata.xml")[0]
+    runPath = up(up(stsXml))
+    metadataFile = glob(runPath + "/*.metadata.xml")[0]
 
     tree = ET.parse(metadataFile).getroot()
     stats = []
+    stats.append(runPath)
     stats.append(tree.find(_("Run", "Name")).text)
     stats.append(tree.find(_("Sample", "Name")).text)
     return stats
