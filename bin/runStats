@@ -9,7 +9,7 @@ def stsHeader():
     return ["NumReads", "ReadLength", "ReadQuality",
             "LocalBaseRate",
             "P0", "P1", "P2",
-            "SNR_A", "SNR_C", "SNR_G", "SNR_T",]
+            "SNR_T", "SNR_G", "SNR_A", "SNR_C",]
 
 def stsLine(stsXml):
     NS = "http://pacificbiosciences.com/PipelineStats/PipeStats.xsd"
@@ -37,7 +37,7 @@ def stsLine(stsXml):
     hqRegionSnrs_ = tree.findall(_("HqRegionSnrDist"))
     meanSnrs = { snrs_.attrib["Channel"] : float(snrs_.find(_("SampleMean")).text)
                  for snrs_ in hqRegionSnrs_ }
-    stats += [meanSnrs[base] for base in "ACGT"]
+    stats += [meanSnrs[base] for base in "TGAC"]
     return stats
 
 def metadataHeader():
