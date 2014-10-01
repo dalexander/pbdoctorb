@@ -9,6 +9,7 @@ setup(
     scripts = ["bin/chem",
                "bin/baxSieve",
                "bin/baxSlimmer",
+               "bin/hpLengthDistribution",
                "bin/runStats"],
     zip_safe = False,
     install_requires=["pbcore >= 0.8.0"]
