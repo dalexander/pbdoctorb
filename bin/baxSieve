@@ -160,7 +160,12 @@ class BasH5Writer(object):
         self._hole_number_to_index = {k:v for v,k in enumerate(hole_numbers)}
 
     def write_zmw(self, hole_number):
-        hole_index = self._hole_number_to_index[hole_number]
+        try:
+            hole_index = self._hole_number_to_index[hole_number]
+        except KeyError:
+            print "Skipping ZMW", hole_number, "not present in file"
+            return
+
         print "Writing ZMW", hole_number, "index", hole_index
         offsets = self._offsets[hole_number]
         if self.has_ccs:
