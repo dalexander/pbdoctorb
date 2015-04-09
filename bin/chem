@@ -75,14 +75,10 @@ def showChem(fname):
         print fname, chem
     else:
         print fname
-        assert fname.endswith(".cmp.h5")
-        c = CmpH5Reader(fname)
-        names = c.movieInfoTable.Name
-        try:
-            chems = c.sequencingChemistry
-        except ChemistryLookupError:
-            chems = ["absent"] * len(names)
-        print fname
+        assert fname.endswith(".cmp.h5") or fname.endswith(".bam")
+        c = openAlignmentFile(fname)
+        names = c.readGroupTable.MovieName
+        chems = c.readGroupTable.SequencingChemistry
         for name, chem  in zip(names, chems):
             print "    ", name, chem
 
