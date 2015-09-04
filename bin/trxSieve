@@ -8,11 +8,11 @@ import argparse, h5py, os.path, numpy as np
 COPY_INTACT = [ "/ScanData",
                 "/TraceData/Codec" ]
 
-# TODO: add more later
-DSETS_TO_SLICE = [ "/TraceData/Traces",
-                   "/TraceData/HoleNumber",
-                   "/TraceData/HoleStatus",
-                   "/TraceData/HoleXY" ]
+TRACE_DSET = "/TraceData/Traces" 
+
+AUX_DSETS_TO_SLICE = [ "/TraceData/HoleNumber",
+                       "/TraceData/HoleStatus",
+                       "/TraceData/HoleXY" ]
 
 def _parser():
     """Return an instance of ArgumentParser"""
@@ -60,13 +60,21 @@ def main():
             for hn in holeNumbersToKeep:
                 i = np.searchsorted(originalHoleNumbers, hn)
                 if originalHoleNumbers[i] != hn:
-                    raise ValueError, "desired holenumber missing from file"
+                    print "Missing ZMW:", hn
                 else:
                     indicesToKeep.append(i)
-            # -- Slice out the desired ZMWs
-            for dsetPath in DSETS_TO_SLICE:
+            # -- Slice out the desired ZMWs from the aux datasets
+            for dsetPath in AUX_DSETS_TO_SLICE:
                 if dsetPath in inFile:
                     outFile[dsetPath] = inFile[dsetPath][indicesToKeep,]
+            # -- Slice the trace data itself.  We handle this
+            # -- separately because of the huge data volume.
+            inputTraces = inFile[TRACE_DSET]
+            outTraceShape = (len(indicesToKeep),) + inputTraces.shape[1:]
+            outputTraces = outFile.create_dataset(TRACE_DSET, outTraceShape)
+            for (outputIdx, (hn, inputIdx)) in enumerate(zip(holeNumbersToKeep, indicesToKeep)):
+                print "Copying ZMW %d" % hn
+                outputTraces[outputIdx,] = inputTraces[inputIdx,]
 
 if __name__ == "__main__":
     main()
