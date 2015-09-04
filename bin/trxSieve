@@ -1,0 +1,72 @@
+#!/usr/bin/env python2.7
+# $ trxSieve --whitelist whitelist input.trx.h5 output.trx.h5
+
+
+import argparse, h5py, os.path, numpy as np
+
+
+COPY_INTACT = [ "/ScanData",
+                "/TraceData/Codec" ]
+
+# TODO: add more later
+DSETS_TO_SLICE = [ "/TraceData/Traces",
+                   "/TraceData/HoleNumber",
+                   "/TraceData/HoleStatus",
+                   "/TraceData/HoleXY" ]
+
+def _parser():
+    """Return an instance of ArgumentParser"""
+    desc = "Tool for subsetting a bas.h5 file based on either a whitelist of hole numbers\
+            or a percentage of reads to be randomly selected."
+    p = argparse.ArgumentParser(description=desc)
+
+    p.add_argument("inputTrxH5",
+                    help="Input trx.h5 file from which reads will be read.")
+
+    p.add_argument("outputTrxH5",
+                    help="Output trx.h5 to which filtered reads will be written.")
+
+    p.add_argument('--whitelist', dest='whitelist', type=str, required=True,
+                    help="File containing whitelist of one hole number per line")
+
+    return p
+
+def main():
+    p = _parser()
+
+    args = p.parse_args()
+
+    inputFname = args.inputTrxH5
+    outputFname = args.outputTrxH5
+    whitelist = args.whitelist
+
+    if not os.path.exists(inputFname):
+        raise IOError("Unable to find input bas.h5 file {b}.".format(b=input_bash5))
+
+    holeNumbersToKeep = sorted([ int(line.strip()) for line in open(whitelist) ])
+
+    with h5py.File(inputFname, "r") as inFile:
+
+        originalHoleNumbers = inFile["/TraceData/HoleNumber"]
+
+        with h5py.File(outputFname, "w") as outFile:
+
+            # -- Copy
+            for itemPath in COPY_INTACT:
+                if itemPath in inFile:
+                    outFile.copy(inFile[itemPath], itemPath)
+            # -- Identify indices
+            indicesToKeep = []
+            for hn in holeNumbersToKeep:
+                i = np.searchsorted(originalHoleNumbers, hn)
+                if originalHoleNumbers[i] != hn:
+                    raise ValueError, "desired holenumber missing from file"
+                else:
+                    indicesToKeep.append(i)
+            # -- Slice out the desired ZMWs
+            for dsetPath in DSETS_TO_SLICE:
+                if dsetPath in inFile:
+                    outFile[dsetPath] = inFile[dsetPath][indicesToKeep,]
+
+if __name__ == "__main__":
+    main()
