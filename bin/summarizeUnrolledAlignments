@@ -1,0 +1,66 @@
+#!/usr/bin/env python
+"""
+Usage: summarizeUnrolledAlignments ALNFILE
+                    [--reference=REFERENCE]
+                    [--holeNumbersWhitelist=HNSWHITELIST]
+                    [--aligned]
+                    [-f]
+
+Outputs 3 files:
+  - unrolledBasecalls.fasta
+  - unrolledReference.fasta
+  - holeInfo.csv
+
+This tool will write files with the exact filenames above, so use a
+new directory to avoid overwriting.
+
+Will assert out if there is more than one alignment for a holenumber!
+This is only intended to be used with unrolled workflows for now!
+"""
+from pbcore.io import *
+import os.path as op
+from docopt import docopt
+import sys, csv
+
+def main():
+    args = docopt(__doc__)
+    alnFile = args["ALNFILE"]
+    referenceFile = args["--reference"]
+    hnsWhitelistFile = args["--holeNumbersWhitelist"]
+    alignedOutput = args["--aligned"]
+    force = args["-f"]
+
+    filesToWrite = ("unrolledBasecalls.fasta",
+                    "unrolledReference.fasta",
+                    "holeInfo.csv")
+
+    if not(force) and any(op.exists(fn) for fn in filesToWrite):
+        print "Refusing to overwrite existing files"
+        sys.exit(-1)
+
+    f = openAlignmentFile(alnFile, referenceFile)
+    if hnsWhitelistFile:
+        hns = [int(line.rstrip()) for line in open(hnsWhitelistFile)]
+    else:
+        hns = sorted(f.HoleNumber)
+
+    unrolledReferenceFasta = FastaWriter("unrolledReference.fasta")
+    unrolledBasecallsFasta = FastaWriter("unrolledBasecalls.fasta")
+    holeInfoCSV = csv.writer(open("holeInfo.csv", "wb"))
+
+    noGapsConvention = dict(aligned=False, orientation="native")
+    gappedConvention = dict(aligned=True,  orientation="native")
+    convention = gappedConvention if alignedOutput else noGapsConvention
+
+    holeInfoCSV.writerow(["HoleNumber", "AlignedBases", "Identity"])
+
+    for hn in hns:
+        alns = f.readsByHoleNumber(hn)
+        assert len(alns) == 1
+        aln = alns[0]
+        unrolledReferenceFasta.writeRecord(str(aln.HoleNumber), aln.reference(**convention))
+        unrolledBasecallsFasta.writeRecord(str(aln.HoleNumber), aln.read     (**convention))
+        holeInfoCSV.writerow([aln.HoleNumber, aln.readLength, "%0.3f" % aln.identity])
+
+if __name__ == "__main__":
+    main()

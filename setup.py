@@ -11,6 +11,7 @@ setup(
                "bin/baxSlimmer",
                "bin/hpLengthDistribution",
                "bin/runStats",
+               "bin/summarizeUnrolledAlignments",
                "bin/trxSieve"],
     zip_safe = False,
     install_requires=["pbcore >= 0.8.0"]
