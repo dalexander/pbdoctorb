@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name = 'pbdoctorb',
-    version = "0.1.0",
+    version = "0.2.0",
     author='Pacific Biosciences',
     author_email='devnet@pacificbiosciences.com',
     license=open("LICENSES.txt").read(),
@@ -14,5 +14,5 @@ setup(
                "bin/summarizeUnrolledAlignments",
                "bin/trxSieve"],
     zip_safe = False,
-    install_requires=["pbcore >= 0.8.0"]
+    install_requires=["pbcore >= 1.2.6"]
 )
