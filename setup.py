@@ -14,5 +14,5 @@ setup(
                "bin/summarizeUnrolledAlignments",
                "bin/trxSieve"],
     zip_safe = False,
-    install_requires=["pbcore >= 1.2.6"]
+    install_requires=["pbcore >= 1.2.6", "docopt >= 0.6.2" ]
 )
