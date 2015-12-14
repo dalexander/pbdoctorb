@@ -67,6 +67,11 @@ def main():
             for dsetPath in AUX_DSETS_TO_SLICE:
                 if dsetPath in inFile:
                     outFile[dsetPath] = inFile[dsetPath][indicesToKeep,]
+
+            # Copy attributes needed...
+            for k, v in inFile["/TraceData"].attrs.iteritems():
+                outFile["/TraceData"].attrs[k] = v
+
             # -- Slice the trace data itself.  We handle this
             # -- separately because of the huge data volume.
             inputTraces = inFile[TRACE_DSET]
