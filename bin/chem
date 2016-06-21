@@ -1,5 +1,6 @@
 #!/usr/bin/env python2.7
-import sys, h5py, argparse, os.path as osp
+import sys, h5py, argparse, os.path as osp, os
+import pysam
 from pbcore.io import *
 from pbcore.chemistry import ChemistryLookupError
 
@@ -48,6 +49,34 @@ def setChem(chem, fname):
                 f["/PulseData/BaseCalls"].attrs["ChangeListID"] = swVers
             except:
                 print fname, "could not set chem!"
+    elif fname.endswith(".bam"):
+        with pysam.AlignmentFile(fname, "rb", check_sq=False) as bam_in:
+            header = dict(bam_in.header)
+            header_ds = header["RG"][0]['DS']
+            header_fields = header_ds.split(";")
+            header_tmp = []
+            overrides = {
+                "SEQUENCINGKIT": sk,
+                "BINDINGKIT": bk,
+                "BASECALLERVERSION": swVers
+            }
+            for field in header_fields:
+                key,value = field.split("=")
+                header_tmp.append((key, overrides.get(key, value)))
+            header_ds_new = ";".join(["=".join([k,v]) for (k,v) in header_tmp])
+            if header_ds_new == header_ds:
+                print "chemistry already set, skipping"
+                return False
+            header["RG"][0]['DS'] = header_ds_new
+            bam_new = fname + ".new"
+            with pysam.AlignmentFile(bam_new, "wb", header=header) as bam_out:
+                for rec in bam_in:
+                    bam_out.write(rec)
+            bam_saved = fname + ".old"
+            print "mv {f} {b}".format(f=fname, b=bam_saved)
+            os.rename(fname, bam_saved)
+            print "mv {f} {b}".format(f=bam_new, b=fname)
+            os.rename(bam_new, fname)
     else:
         assert fname.endswith(".cmp.h5")
         f = h5py.File(fname)
